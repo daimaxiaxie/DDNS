@@ -1,7 +1,9 @@
 package deamon
 
 import (
+	"fmt"
 	"golang.org/x/sys/windows"
+	"time"
 	"unsafe"
 )
 
@@ -14,7 +16,8 @@ BOOL Shell_NotifyIconW(
 */
 
 func Show() {
-	hwnd, err := CreateMainWindow()
+	hWnd, err := CreateMainWindow()
+	//hWnd, err := GetConsoleWindow()
 	if err != nil {
 		panic(err)
 	}
@@ -26,9 +29,11 @@ func Show() {
 
 	var data = NOTIFYICONDATA{}
 	data.CbSize = uint32(unsafe.Sizeof(data))
-	data.UFlags = NIF_ICON
-	data.HWnd = hwnd
+	data.UFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE
+	data.UCallbackMessage = TrayMsg
+	data.HWnd = hWnd
 	data.HIcon = icon
+	copy(data.SzTip[:], windows.StringToUTF16("DDNS"))
 	if _, err := Shell_NotifyIcon(NIM_ADD, &data); err != nil {
 		panic(err)
 	}
@@ -39,19 +44,35 @@ func Show() {
 		}
 	}()
 
-	ShowWindow(hwnd, SW_SHOW)
+	SetWinProc(hWnd, wndProc)
+	//ShowWindow(hWnd, SW_SHOW)
+	//time.Sleep(2 * time.Second)
+	//ShowWindow(hWnd, SW_HIDE)
+	//time.Sleep(4 * time.Second)
+	ShowWindow(hWnd, SW_SHOW)
 
-	var msg MSG
-	for true {
-		r, err := GetMessage(&msg, 0, 0, 0)
-		if err != nil {
-			panic(err)
+	go func() {
+		for true {
+			fmt.Println(CheckWindowMinimize(hWnd))
+			time.Sleep(1 * time.Second)
 		}
-		if r == 0 {
-			break
-		}
+	}()
 
-		TranslateMessage(&msg)
-		DispatchMessage(&msg)
-	}
+	go func() {
+		var msg MSG
+		for true {
+			r, err := GetMessage(&msg, 0, 0, 0)
+			if err != nil {
+				panic(err)
+			}
+			if r == 0 {
+				break
+			}
+
+			TranslateMessage(&msg)
+			DispatchMessage(&msg)
+		}
+	}()
+
+	time.Sleep(10 * time.Second)
 }

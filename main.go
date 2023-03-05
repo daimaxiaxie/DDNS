@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 )
 
 var configPath *string = flag.String("configPath", "./config.json", "Config json file")
@@ -42,10 +41,13 @@ func main() {
 		fmt.Println(err)
 	}
 
-	if err := cloudProvider.Update(); err != nil {
-		fmt.Println(err)
-	}
+	/*
+		if err := cloudProvider.Update(); err != nil {
+			fmt.Println(err)
+		}
+	*/
+	fmt.Println("test ui")
 
 	deamon.Show()
-	time.Sleep(4 * time.Second)
+
 }

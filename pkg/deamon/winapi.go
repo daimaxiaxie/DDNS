@@ -1,6 +1,7 @@
 package deamon
 
 import (
+	"fmt"
 	"golang.org/x/sys/windows"
 	"syscall"
 	"unsafe"
@@ -11,9 +12,14 @@ const (
 	LR_DEFAULTSIZE  = 0x00000040
 	LR_LOADFROMFILE = 0x00000010
 
-	SW_SHOW = 5
+	SW_HIDE          = 0
+	SW_SHOWMINIMIZED = 2
+	SW_SHOW          = 5
 
 	CW_USEDEFAULT = ^0x7fffffff
+
+	GWLP_WNDPROC = -4
+	GCL_HMODULE  = -16
 )
 
 const (
@@ -26,6 +32,9 @@ const (
 	WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX
 
 	WM_DESTROY       = 0x0002
+	WM_CLOSE         = 0x0010
+	WM_QUIT          = 0x0012
+	WM_SHOWWINDOW    = 0x0018
 	WM_SETICON       = 0x0080
 	WM_MOUSEMOVE     = 0x0200
 	WM_LBUTTONDOWN   = 0x0201
@@ -35,6 +44,8 @@ const (
 	WM_RBUTTONUP     = 0x0205
 	WM_RBUTTONDBLCLK = 0x0206
 	WM_APP           = 0x8000
+
+	TrayMsg = WM_APP + 1
 )
 
 const (
@@ -104,9 +115,24 @@ type WNDCLASSEX struct {
 	HIconSm       uintptr
 }
 
+type WINDOWPLACEMENT struct {
+	Length                       uint32
+	Flags                        uint32
+	ShowCmd                      uint32
+	PtMinPosition, PtMaxPosition POINT
+	RcNormalPosition, RcDevice   RECT
+}
+
 type POINT struct {
 	X int32
 	Y int32
+}
+
+type RECT struct {
+	Left   int32
+	Top    int32
+	Right  int32
+	Bottom int32
 }
 
 type MSG struct {
@@ -147,9 +173,19 @@ var (
 	procGetMessageW = libuser32.NewProc("GetMessageW")
 	procShowWindow  = libuser32.NewProc("ShowWindow")
 
-	getConsoleTitle  = libkernel32.NewProc("GetConsoleTitleW")
-	getConsoleWindow = libkernel32.NewProc("GetConsoleWindow")
-	setConsoleTitle  = libkernel32.NewProc("SetConsoleTitleW")
+	getConsoleTitle     = libkernel32.NewProc("GetConsoleTitleW")
+	getConsoleWindow    = libkernel32.NewProc("GetConsoleWindow")
+	setConsoleTitle     = libkernel32.NewProc("SetConsoleTitleW")
+	setWindowLong       = libuser32.NewProc("SetWindowLongW")
+	getClassLong        = libuser32.NewProc("GetClassLongW")
+	getWindowPlacement  = libuser32.NewProc("GetWindowPlacement")
+	getCursorPos        = libuser32.NewProc("GetCursorPos")
+	setForegroundWindow = libuser32.NewProc("SetForegroundWindow")
+	trackPopupMenu      = libuser32.NewProc("TrackPopupMenu")
+	createPopupMenu     = libuser32.NewProc("CreatePopupMenu")
+	appendMenuW         = libuser32.NewProc("AppendMenuW")
+
+	getLastError = libkernel32.NewProc("GetLastError")
 )
 
 func Shell_NotifyIcon(dwMessage uint32, lpData *NOTIFYICONDATA) (int32, error) {
@@ -181,6 +217,14 @@ func SetConsoleTitle(lpConsoleTitle *uint16, nSize uint32) error {
 	}
 
 	return nil
+}
+
+func GetConsoleWindow() (uintptr, error) {
+	hWnd, _, err := getConsoleWindow.Call()
+	if hWnd == 0 {
+		return 0, err
+	}
+	return hWnd, nil
 }
 
 func GetModuleHandle(lpModuleName *uint16) (uintptr, error) {
@@ -234,15 +278,70 @@ func DispatchMessage(lpMsg *MSG) (uintptr, error) {
 	return r, nil
 }
 
+func GetClassLong(hWnd uintptr, index int) (uintptr, error) {
+	r, _, err := getClassLong.Call(hWnd, uintptr(index))
+	if r == 0 {
+		return 0, err
+	}
+	return r, nil
+}
+
 func wndProc(hWnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+	fmt.Println("event")
 	switch msg {
-	case WM_DESTROY:
+	case TrayMsg:
+		fmt.Println("click")
+		switch nMsg := uint16(lParam); nMsg {
+		case WM_LBUTTONDOWN:
+			ShowWindow(hWnd, SW_SHOW)
+		case WM_RBUTTONDOWN:
+			ShowMenu(hWnd)
+		}
+	case WM_SHOWWINDOW:
+		fmt.Println(wParam, lParam)
+		ShowWindow(hWnd, SW_HIDE)
+	case WM_CLOSE | WM_DESTROY:
 		PostQuitMessage(0)
 	default:
 		r, _ := DefWindowProc(hWnd, msg, wParam, lParam)
 		return r
 	}
 	return 0
+}
+
+func SetWinProc(hWnd uintptr, proc func(uintptr, uint32, uintptr, uintptr) uintptr) (uintptr, error) {
+	var offset int32 = -4
+	r, _, err := setWindowLong.Call(hWnd, uintptr(offset), windows.NewCallback(proc))
+	fmt.Println(r, err)
+	if r == 0 {
+		fmt.Println(getLastError.Call())
+		return 0, err
+	}
+	return r, nil
+}
+
+func SetHookMinimize(hWnd uintptr) {
+	hInstance, err := GetClassLong(hWnd, GCL_HMODULE)
+	if err != nil {
+		return
+	}
+	fmt.Println(hInstance)
+	//TODO
+}
+
+func CheckWindowMinimize(hWnd uintptr) (bool, error) {
+
+	var lpwndpl WINDOWPLACEMENT
+
+	r, _, err := getWindowPlacement.Call(hWnd, uintptr(unsafe.Pointer(&lpwndpl)))
+	if r == 0 {
+		return false, err
+	}
+
+	if lpwndpl.ShowCmd == SW_SHOWMINIMIZED {
+		return true, nil
+	}
+	return false, nil
 }
 
 func CreateTray() {
@@ -280,6 +379,31 @@ func CreateMainWindow() (uintptr, error) {
 		return 0, err
 	}
 	return hwnd, nil
+}
+
+func ShowMenu(hWnd uintptr) error {
+	const TPM_BOTTOMALIGN = 0x0020
+	const TPM_LEFTALIGN = 0x0000
+	const MF_STRING = 0x00000000
+	point := POINT{}
+	r, _, err := getCursorPos.Call(uintptr(unsafe.Pointer(&point)))
+	if r == 0 {
+		return err
+	}
+
+	//setForegroundWindow.Call(uintptr(hWnd))
+
+	hMenu, _, err := createPopupMenu.Call()
+	appendMenuW.Call(hMenu, MF_STRING, WM_CLOSE, uintptr(unsafe.Pointer(windows.StringToUTF16Ptr("退出"))))
+	r, _, err = trackPopupMenu.Call(hMenu, TPM_BOTTOMALIGN|TPM_LEFTALIGN, uintptr(point.X), uintptr(point.Y), 0, hWnd, 0)
+	if r == 0 {
+		return err
+	}
+	return nil
+}
+
+func HideMenu(hWnd uintptr) {
+
 }
 
 func ShowWindow(hWnd uintptr, nCmdShow int32) (int32, error) {
