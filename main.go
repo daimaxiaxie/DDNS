@@ -2,52 +2,69 @@ package main
 
 import (
 	"DDNS/pkg/cloud"
-	"DDNS/pkg/common"
 	"DDNS/pkg/deamon"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 )
 
-var configPath *string = flag.String("configPath", "./config.json", "Config json file")
+type SubFlag struct {
+	*flag.FlagSet
+	comment string
+}
+
+//var configPath *string = flag.String("configPath", "./config.json", "Config json file")
 
 func main() {
-	flag.Parse()
-
-	data, err := os.ReadFile(*configPath)
-	if err != nil {
-		fmt.Println(err)
-		return
+	stop := &SubFlag{
+		FlagSet: flag.NewFlagSet("stop", flag.ExitOnError),
+		comment: "stop ddns deamon process",
 	}
+	start := &SubFlag{FlagSet: flag.NewFlagSet("start", flag.ExitOnError), comment: "start ddns"}
+	configPath := start.String("configPath", "./config.json", "Config json file")
 
-	cloud.Load()
-
-	config := common.Config{}
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	cloudProvider, err := common.Manager.GetCloudProvider(config.Cloud, config.Version)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	err = cloudProvider.Init(config.Extra)
-	if err != nil {
-		fmt.Println(err)
+	subCommands := map[string]*SubFlag{
+		start.Name(): start,
+		stop.Name():  stop,
 	}
 
 	/*
-		if err := cloudProvider.Update(); err != nil {
-			fmt.Println(err)
+		usage := func() {
+			fmt.Println("Usage: ddns COMMAND")
+			for _, v := range subCommands {
+				fmt.Println(v.Name(), v.comment)
+				v.PrintDefaults()
+				fmt.Println()
+			}
 		}
 	*/
-	fmt.Println("test ui")
 
-	deamon.Show()
+	if len(os.Args) < 2 {
+		//usage()
+		os.Args = append(os.Args, "start")
+	}
+	subFlag, ok := subCommands[os.Args[1]]
+	if !ok {
+		subFlag = subCommands["start"]
+		_ = subFlag.Parse(os.Args[1:])
+	} else {
+		_ = subFlag.Parse(os.Args[2:])
+	}
+
+	//flag.Parse()
+
+	cloud.Load()
+
+	switch subFlag.Name() {
+	case "start":
+		data, err := os.ReadFile(*configPath)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		deamon.Run(data)
+	case "stop":
+		deamon.Stop()
+	}
 
 }

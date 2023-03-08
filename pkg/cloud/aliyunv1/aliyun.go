@@ -90,7 +90,7 @@ func (ali *Aliyun) Update() error {
 				return err
 			}
 		}
-		ali.OpenSLB()
+		_ = ali.OpenSLB()
 	}
 	return nil
 }
@@ -184,6 +184,7 @@ func (ali *Aliyun) AddRecord(value string) error {
 	if _, err := ali.client.AddDomainRecord(request); err != nil {
 		return err
 	}
+	fmt.Println(time.Now().Local(), " add record : ", value)
 	return nil
 }
 
@@ -217,7 +218,8 @@ func (ali *Aliyun) UpdateRecord(value string) error {
 	if err != nil {
 		fmt.Println(err)
 	}
-	fmt.Println(response.GetHttpContentString())
+	//fmt.Println(response.GetHttpContentString())
+	fmt.Println(time.Now().Local(), " update record : ", request.Value, response.GetHttpContentString())
 	return nil
 }
 

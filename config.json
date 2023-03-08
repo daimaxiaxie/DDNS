@@ -1,0 +1,14 @@
+{
+  "cloud": "aliyun",
+  "version": 1,
+  "duration": 60,
+  "extra": {
+    "accessKeyID": "your id",
+    "accessKeySecret": "your secret",
+    "recordType": "A",
+    "rr": "dev",
+    "domain": "example.com",
+    "netInterface": "WLAN",
+    "resolveMode": "RandomOnly"
+  }
+}

@@ -1,10 +1,12 @@
+//go:build windows
+
 package deamon
 
 import (
+	"DDNS/pkg/common"
+	"encoding/json"
 	"fmt"
-	"golang.org/x/sys/windows"
 	"time"
-	"unsafe"
 )
 
 /* C Win API
@@ -15,64 +17,66 @@ BOOL Shell_NotifyIconW(
 );
 */
 
-func Show() {
-	hWnd, err := CreateMainWindow()
-	//hWnd, err := GetConsoleWindow()
+const (
+	WindowName = "DDNS"
+	ICONPath   = "D:/GolandProjects/DDNS/resources/dns.ico"
+)
+
+func Run(configData []byte) {
+	t := Task{}
+	if err := t.Init(configData); err != nil {
+		panic(err)
+	}
+
+	var gui GUI
+	if err := gui.Init(); err != nil {
+		panic(err)
+	}
+	gui.Run(t.Run)
+}
+
+func Stop() {
+
+}
+
+type Task struct {
+	config        *common.Config
+	cloudProvider common.CloudProvider
+}
+
+func (t *Task) Init(data []byte) error {
+	config := common.Config{}
+	err := json.Unmarshal(data, &config)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	icon, err := LoadImage(0, windows.StringToUTF16Ptr("D:/Download/dns.ico"), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE|LR_LOADFROMFILE)
+	cloudProvider, err := common.Manager.GetCloudProvider(config.Cloud, config.Version)
 	if err != nil {
-		panic(err)
+		return err
+	}
+	err = cloudProvider.Init(config.Extra)
+	if err != nil {
+		return err
 	}
 
-	var data = NOTIFYICONDATA{}
-	data.CbSize = uint32(unsafe.Sizeof(data))
-	data.UFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE
-	data.UCallbackMessage = TrayMsg
-	data.HWnd = hWnd
-	data.HIcon = icon
-	copy(data.SzTip[:], windows.StringToUTF16("DDNS"))
-	if _, err := Shell_NotifyIcon(NIM_ADD, &data); err != nil {
-		panic(err)
+	t.config = &config
+	t.cloudProvider = cloudProvider
+	return nil
+}
+
+func (t *Task) Run(exit chan bool) {
+	ticker := time.NewTicker(time.Duration(t.config.Duration) * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-exit:
+			return
+		case <-ticker.C:
+			if err := t.cloudProvider.Update(); err != nil {
+				fmt.Println(err)
+			}
+		}
 	}
-
-	defer func() {
-		if _, err := Shell_NotifyIcon(NIM_DELETE, &data); err != nil {
-
-		}
-	}()
-
-	SetWinProc(hWnd, wndProc)
-	//ShowWindow(hWnd, SW_SHOW)
-	//time.Sleep(2 * time.Second)
-	//ShowWindow(hWnd, SW_HIDE)
-	//time.Sleep(4 * time.Second)
-	ShowWindow(hWnd, SW_SHOW)
-
-	go func() {
-		for true {
-			fmt.Println(CheckWindowMinimize(hWnd))
-			time.Sleep(1 * time.Second)
-		}
-	}()
-
-	go func() {
-		var msg MSG
-		for true {
-			r, err := GetMessage(&msg, 0, 0, 0)
-			if err != nil {
-				panic(err)
-			}
-			if r == 0 {
-				break
-			}
-
-			TranslateMessage(&msg)
-			DispatchMessage(&msg)
-		}
-	}()
-
-	time.Sleep(10 * time.Second)
 }
