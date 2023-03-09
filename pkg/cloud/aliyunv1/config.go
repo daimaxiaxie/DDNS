@@ -19,7 +19,7 @@ const FirstOnly = "FirstOnly"
 const RandomOnly = "RandomOnly"
 const MultiIP = "ALL"
 const DefaultMode = FirstOnly
-const DNSEnable = "Enable"
+const DNSEnable = "ENABLE"
 
 type Config struct {
 	Region          string `json:"region,omitempty"`

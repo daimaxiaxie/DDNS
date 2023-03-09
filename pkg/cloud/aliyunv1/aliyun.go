@@ -48,7 +48,7 @@ func (ali *Aliyun) Init(config []byte) error {
 				return err
 			}
 			for _, record := range records {
-				if record.RR == ali.config.RR && record.Type == ali.config.RecordType && record.Status == DNSEnable {
+				if record.RR == ali.config.RR && record.Type == ali.config.RecordType && strings.ToUpper(record.Status) == DNSEnable {
 					ali.config.RecordID = record.RecordID
 					break
 				}
